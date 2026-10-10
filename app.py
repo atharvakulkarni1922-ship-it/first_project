@@ -18,13 +18,24 @@ st.set_page_config(
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "data" / "leads.db"
 
+LEAD_STATUSES = [
+    "New",
+    "Reviewing",
+    "Contacted",
+    "Qualified",
+    "Won",
+    "Ignored",
+]
+
 
 def ensure_database():
     """Create and populate the database on a fresh Streamlit deployment."""
+    from database import initialize_database
+
     if DB_PATH.exists():
+        initialize_database()
         return
 
-    from database import initialize_database
     from lead_classifier import classify_articles
     from news_collector import collect_news
 
@@ -56,11 +67,15 @@ def load_articles():
                 COALESCE(l.lead_score, 0) AS lead_score,
                 COALESCE(l.lead_priority, 'Unclassified')
                     AS lead_priority,
-                COALESCE(l.reason, 'Not classified')
-                    AS reason
+                COALESCE(l.reason, 'Not classified') AS reason,
+                COALESCE(a2.status, 'New') AS status,
+                COALESCE(a2.notes, '') AS notes,
+                a2.follow_up_date
             FROM articles AS a
             LEFT JOIN lead_classification AS l
                 ON a.id = l.article_id
+            LEFT JOIN lead_actions AS a2
+                ON a.id = a2.article_id
             ORDER BY lead_score DESC, a.published DESC
             """,
             connection,
@@ -175,6 +190,70 @@ minimum_score = st.sidebar.slider(
     value=0,
 )
 
+st.sidebar.divider()
+st.sidebar.header("Lead follow-up")
+
+lead_options = {
+    f"{row.title[:80]} — {row.status}": int(row.id)
+    for row in df.itertuples()
+}
+
+if lead_options:
+    selected_label = st.sidebar.selectbox(
+        "Select a lead",
+        options=list(lead_options),
+    )
+    selected_id = lead_options[selected_label]
+    selected_row = df.loc[df["id"] == selected_id].iloc[0]
+
+    selected_status = st.sidebar.selectbox(
+        "Status",
+        LEAD_STATUSES,
+        index=(
+            LEAD_STATUSES.index(selected_row["status"])
+            if selected_row["status"] in LEAD_STATUSES
+            else 0
+        ),
+    )
+    selected_notes = st.sidebar.text_area(
+        "Notes",
+        value=selected_row["notes"],
+        height=100,
+    )
+    selected_follow_up = st.sidebar.date_input(
+        "Follow-up date",
+        value=(
+            pd.to_datetime(selected_row["follow_up_date"]).date()
+            if pd.notna(selected_row["follow_up_date"])
+            else None
+        ),
+    )
+
+    if st.sidebar.button("Save lead update", type="primary"):
+        with sqlite3.connect(DB_PATH) as connection:
+            connection.execute(
+                """
+                INSERT INTO lead_actions
+                    (article_id, status, notes, follow_up_date, updated_at)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(article_id) DO UPDATE SET
+                    status = excluded.status,
+                    notes = excluded.notes,
+                    follow_up_date = excluded.follow_up_date,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    selected_id,
+                    selected_status,
+                    selected_notes,
+                    selected_follow_up.isoformat()
+                    if selected_follow_up
+                    else None,
+                ),
+            )
+        st.cache_data.clear()
+        st.sidebar.success("Lead update saved.")
+
 
 # ----------------------------
 # Apply filters
@@ -242,13 +321,15 @@ average_score = (
     if total_articles
     else 0
 )
+active_follow_ups = (filtered["status"].isin(["Contacted", "Qualified"])).sum()
 
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3, col4, col5 = st.columns(5)
 
 col1.metric("Articles", total_articles)
 col2.metric("High Potential", int(high_potential))
 col3.metric("Potential", int(potential))
 col4.metric("Average Score", average_score)
+col5.metric("Active Follow-ups", int(active_follow_ups))
 
 
 # ----------------------------
@@ -315,6 +396,8 @@ else:
             "published",
             "lead_score",
             "lead_priority",
+            "status",
+            "follow_up_date",
             "reason",
             "url",
         ]
@@ -329,6 +412,8 @@ else:
             "published": "Published",
             "lead_score": "Score",
             "lead_priority": "Priority",
+            "status": "Status",
+            "follow_up_date": "Follow-up",
             "reason": "Scoring explanation",
             "url": "Article Link",
         }
