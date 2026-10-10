@@ -19,6 +19,21 @@ BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "data" / "leads.db"
 
 
+def ensure_database():
+    """Create and populate the database on a fresh Streamlit deployment."""
+    if DB_PATH.exists():
+        return
+
+    from database import initialize_database
+    from lead_classifier import classify_articles
+    from news_collector import collect_news
+
+    with st.spinner("Collecting the latest industrial project news for the first load..."):
+        initialize_database()
+        collect_news()
+        classify_articles()
+
+
 # ----------------------------
 # Load data
 # ----------------------------
@@ -61,12 +76,7 @@ st.caption(
     "for conveyor and material-handling sales opportunities."
 )
 
-if not DB_PATH.exists():
-    st.error(
-        "Database not found. Run database.py and "
-        "news_collector.py first."
-    )
-    st.stop()
+ensure_database()
 
 df = load_articles()
 
