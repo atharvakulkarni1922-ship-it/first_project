@@ -1,0 +1,20 @@
+# Jayashree Industrial Project Lead Intelligence
+
+Streamlit dashboard for reviewing Indian industrial project news and prioritising potential conveyor and material-handling sales leads.
+
+## Run locally
+
+```text
+pip install -r requirements.txt
+python news_collector.py
+python lead_classifier.py
+streamlit run app.py
+```
+
+The dashboard reads from `data/leads.db`. The database is included so the deployed app opens with the current lead set.
+
+## Weekly refresh
+
+GitHub Actions runs the collector and classifier every Monday at 9:00 AM India Standard Time (03:30 UTC), commits any database changes, and Streamlit Community Cloud redeploys from the updated repository.
+
+
