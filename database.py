@@ -42,6 +42,17 @@ def initialize_database():
             )
         """)
 
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS lead_actions (
+                article_id INTEGER PRIMARY KEY,
+                status TEXT NOT NULL DEFAULT 'New',
+                notes TEXT DEFAULT '',
+                follow_up_date TEXT,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (article_id) REFERENCES articles(id)
+            )
+        """)
+
 
 if __name__ == "__main__":
     initialize_database()
