@@ -1,0 +1,40 @@
+name: Weekly lead refresh
+
+on:
+  schedule:
+    # 03:30 UTC = 09:00 Asia/Kolkata, every Monday.
+    - cron: "30 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Collect the latest project news
+        run: python news_collector.py
+
+      - name: Reclassify all leads
+        run: python lead_classifier.py
+
+      - name: Commit refreshed lead database
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/leads.db
+          git diff --cached --quiet || git commit -m "Refresh weekly lead database"
+          git push
+
